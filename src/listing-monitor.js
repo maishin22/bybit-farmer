@@ -1,4 +1,3 @@
-
 import 'dotenv/config';
 import { readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -7,51 +6,59 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KNOWN_FILE = join(__dirname, '..', 'known-listings.json');
 
-const BINANCE_API = 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT';
-const BYBIT_API = 'https://api.bybit.com/v5/market/instruments-info?category=spot';
-const FETCH_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json',
-};
+const EXCHANGES = [
+  {
+    name: 'Binance',
+    url: 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT',
+    parse: (d) => {
+      if (!d?.symbols) return [];
+      return d.symbols.filter(s => s.status === 'TRADING').map(s => `${s.baseAsset}/${s.quoteAsset}`);
+    },
+  },
+  {
+    name: 'Bybit',
+    url: 'https://api.bybit.com/v5/market/instruments-info?category=spot',
+    parse: (d) => {
+      if (!d?.result?.list) return [];
+      return d.result.list.filter(s => s.status === 'Trading').map(s => `${s.baseCoin}/${s.quoteCoin}`);
+    },
+  },
+  {
+    name: 'CoinGecko',
+    url: 'https://api.coingecko.com/api/v3/coins/list',
+    parse: (d) => {
+      if (!Array.isArray(d)) return [];
+      return d.map(c => c.id);
+    },
+  },
+];
 
 const TELEGRAM_BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT = process.env.TELEGRAM_CHANNEL_ID;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 
-async function fetchAPI(url, transform) {
+async function fetchPairs(exchange) {
   try {
-    const res = await fetch(url, { headers: FETCH_HEADERS, signal: AbortSignal.timeout(30000) });
+    const res = await fetch(exchange.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(30000),
+    });
     const text = await res.text();
     const data = JSON.parse(text);
-    return transform(data);
+    const pairs = exchange.parse(data);
+    console.log(`  ${exchange.name}: ${pairs.length} pairs`);
+    return { name: exchange.name, pairs };
   } catch (e) {
-    console.error(`  ⚠️  API error (${url.slice(0, 40)}...): ${e.message}`);
-    return [];
+    console.log(`  ${exchange.name}: ⚠️ ${e.message}`);
+    return { name: exchange.name, pairs: [] };
   }
 }
-
-function binanceTransform(data) {
-  if (!data || !Array.isArray(data.symbols)) return [];
-  return data.symbols
-    .filter(s => s.status === 'TRADING')
-    .map(s => ({ exchange: 'Binance', symbol: `${s.baseAsset}/${s.quoteAsset}`, base: s.baseAsset, quote: s.quoteAsset }));
-}
-
-function bybitTransform(data) {
-  if (!data || !data.result || !Array.isArray(data.result.list)) return [];
-  return data.result.list
-    .filter(s => s.status === 'Trading')
-    .map(s => ({ exchange: 'Bybit', symbol: `${s.baseCoin}/${s.quoteCoin}`, base: s.baseCoin, quote: s.quoteCoin }));
-}
-
-const fetchBinanceListings = () => fetchAPI(BINANCE_API, binanceTransform);
-const fetchBybitListings = () => fetchAPI(BYBIT_API, bybitTransform);
 
 function loadKnown() {
   try {
     return JSON.parse(readFileSync(KNOWN_FILE, 'utf-8'));
   } catch {
-    return { binance: [], bybit: [] };
+    return {};
   }
 }
 
@@ -59,12 +66,12 @@ function saveKnown(data) {
   writeFileSync(KNOWN_FILE, JSON.stringify(data, null, 2));
 }
 
-function buildKey(p) {
-  return `${p.exchange}:${p.symbol}`;
+function buildKey(pair) {
+  return `${pair.name}:${pair.pair}`;
 }
 
-async function sendAlert(pair) {
-  const msg = `🚀 *NEW LISTING* on ${pair.exchange}\n\n${pair.symbol}\n\nTrade now: https://www.bybit.com/invite?ref=N1PKV`;
+async function sendAlert(name, pair) {
+  const msg = `🚀 *NEW LISTING* on ${name}\n\n${pair}\n\nTrade: https://www.bybit.com/invite?ref=N1PKV`;
 
   if (TELEGRAM_BOT && TELEGRAM_CHAT) {
     try {
@@ -74,9 +81,9 @@ async function sendAlert(pair) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT, text: msg, parse_mode: 'Markdown' }),
       });
-      console.log(`  📨 Telegram alert sent for ${pair.symbol}`);
+      console.log(`  📨 Telegram alert for ${pair}`);
     } catch (e) {
-      console.log(`  ❌ Telegram alert error: ${e.message}`);
+      console.log(`  ❌ Telegram error: ${e.message}`);
     }
   }
 
@@ -87,9 +94,9 @@ async function sendAlert(pair) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: msg }),
       });
-      console.log(`  📨 Discord alert sent for ${pair.symbol}`);
+      console.log(`  📨 Discord alert for ${pair}`);
     } catch (e) {
-      console.log(`  ❌ Discord alert error: ${e.message}`);
+      console.log(`  ❌ Discord error: ${e.message}`);
     }
   }
 }
@@ -99,57 +106,48 @@ async function main() {
   console.log('=== Listing Monitor ===');
   console.log(`[${new Date().toISOString()}]`);
 
-  const [binance, bybit] = await Promise.all([
-    fetchBinanceListings(),
-    fetchBybitListings(),
-  ]);
-  console.log(`\nBinance: ${binance.length} pairs`);
-  console.log(`Bybit: ${bybit.length} pairs`);
+  const results = await Promise.all(EXCHANGES.map(fetchPairs));
 
   const known = loadKnown();
+  const isFirstRun = Object.keys(known).length === 0;
 
-  const isFirstRun = known.binance.length === 0 && known.bybit.length === 0;
-  const knownSet = new Set(known.binance.concat(known.bybit));
+  const allNew = [];
+  for (const r of results) {
+    const knownPairs = known[r.name] || [];
+    const knownSet = new Set(knownPairs);
 
-  const newPairs = [];
-  for (const p of binance) {
-    const key = buildKey(p);
-    if (!knownSet.has(key)) {
-      known.binance.push(key);
-      newPairs.push(p);
+    const newPairs = r.pairs.filter(p => !knownSet.has(p));
+    for (const p of newPairs) {
+      knownPairs.push(p);
+      allNew.push({ name: r.name, pair: p });
     }
-  }
-  for (const p of bybit) {
-    const key = buildKey(p);
-    if (!knownSet.has(key)) {
-      known.bybit.push(key);
-      newPairs.push(p);
-    }
+    known[r.name] = knownPairs;
   }
 
   if (isFirstRun) {
-    console.log(`\n📦 First run — saved ${known.binance.length + known.bybit.length} pairs as baseline. No alerts sent.`);
+    const total = Object.values(known).reduce((a, b) => a + b.length, 0);
+    console.log(`\n📦 First run — saved ${total} entries as baseline. No alerts.`);
     saveKnown(known);
     return;
   }
 
-  if (newPairs.length === 0) {
+  if (allNew.length === 0) {
     console.log('\nNo new listings found.');
     saveKnown(known);
     return;
   }
 
-  console.log(`\n🎯 ${newPairs.length} NEW LISTING(S) FOUND!`);
-  for (const p of newPairs) {
-    console.log(`  -> ${p.exchange}: ${p.symbol}`);
+  console.log(`\n🎯 ${allNew.length} NEW ITEM(S)!`);
+  for (const item of allNew) {
+    console.log(`  -> ${item.name}: ${item.pair}`);
   }
 
-  for (const p of newPairs) {
-    await sendAlert(p);
+  for (const item of allNew) {
+    await sendAlert(item.name, item.pair);
   }
 
   saveKnown(known);
-  console.log('\nKnown listings updated.');
+  console.log('\nKnown entries updated.');
 }
 
 main().catch(e => {
