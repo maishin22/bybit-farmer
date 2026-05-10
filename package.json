@@ -1,0 +1,15 @@
+{
+  "name": "bybit-farmer",
+  "version": "1.0.0",
+  "description": "Auto affiliate content poster for Bybit",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "daemon": "node src/scheduler.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "dotenv": "^16.4.0",
+    "twitter-api-v2": "^1.29.0"
+  }
+}
