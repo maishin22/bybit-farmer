@@ -16,6 +16,10 @@ const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 async function fetchBinanceListings() {
   const res = await fetch(BINANCE_API);
   const data = await res.json();
+  if (!data || !Array.isArray(data.symbols)) {
+    console.error('  ⚠️  Binance API returned unexpected format');
+    return [];
+  }
   const pairs = [];
   for (const s of data.symbols) {
     if (s.status === 'TRADING') {
@@ -33,6 +37,10 @@ async function fetchBinanceListings() {
 async function fetchBybitListings() {
   const res = await fetch(BYBIT_API);
   const data = await res.json();
+  if (!data || !data.result || !Array.isArray(data.result.list)) {
+    console.error('  ⚠️  Bybit API returned unexpected format');
+    return [];
+  }
   const pairs = [];
   for (const s of data.result.list) {
     if (s.status === 'Trading') {
