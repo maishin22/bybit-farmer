@@ -6,51 +6,23 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KNOWN_FILE = join(__dirname, '..', 'known-listings.json');
 
-const EXCHANGES = [
-  {
-    name: 'Binance',
-    url: 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT',
-    parse: (d) => {
-      if (!d?.symbols) return [];
-      return d.symbols.filter(s => s.status === 'TRADING').map(s => `${s.baseAsset}/${s.quoteAsset}`);
-    },
-  },
-  {
-    name: 'Bybit',
-    url: 'https://api.bybit.com/v5/market/instruments-info?category=spot',
-    parse: (d) => {
-      if (!d?.result?.list) return [];
-      return d.result.list.filter(s => s.status === 'Trading').map(s => `${s.baseCoin}/${s.quoteCoin}`);
-    },
-  },
-  {
-    name: 'CoinGecko',
-    url: 'https://api.coingecko.com/api/v3/coins/list',
-    parse: (d) => {
-      if (!Array.isArray(d)) return [];
-      return d.map(c => c.id);
-    },
-  },
-];
-
 const TELEGRAM_BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT = process.env.TELEGRAM_CHANNEL_ID;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 
-async function fetchPairs(exchange) {
+const HEADERS = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
+
+async function fetchOne(name, url, parse, timeout = 20000) {
   try {
-    const res = await fetch(exchange.url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(30000),
-    });
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(timeout) });
     const text = await res.text();
     const data = JSON.parse(text);
-    const pairs = exchange.parse(data);
-    console.log(`  ${exchange.name}: ${pairs.length} pairs`);
-    return { name: exchange.name, pairs };
+    const items = parse(data);
+    console.log(`  ${name}: ${items.length} items`);
+    return { name, items };
   } catch (e) {
-    console.log(`  ${exchange.name}: ⚠️ ${e.message}`);
-    return { name: exchange.name, pairs: [] };
+    console.log(`  ${name}: ⚠️ ${e.message}`);
+    return { name, items: [] };
   }
 }
 
@@ -66,12 +38,8 @@ function saveKnown(data) {
   writeFileSync(KNOWN_FILE, JSON.stringify(data, null, 2));
 }
 
-function buildKey(pair) {
-  return `${pair.name}:${pair.pair}`;
-}
-
-async function sendAlert(name, pair) {
-  const msg = `🚀 *NEW LISTING* on ${name}\n\n${pair}\n\nTrade: https://www.bybit.com/invite?ref=N1PKV`;
+async function sendAlert(name, item) {
+  const msg = `🚀 *NEW LISTING* on ${name}\n\n${item}\n\nTrade: https://www.bybit.com/invite?ref=N1PKV`;
 
   if (TELEGRAM_BOT && TELEGRAM_CHAT) {
     try {
@@ -81,7 +49,7 @@ async function sendAlert(name, pair) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: TELEGRAM_CHAT, text: msg, parse_mode: 'Markdown' }),
       });
-      console.log(`  📨 Telegram alert for ${pair}`);
+      console.log(`  📨 Telegram alert for ${item}`);
     } catch (e) {
       console.log(`  ❌ Telegram error: ${e.message}`);
     }
@@ -94,7 +62,7 @@ async function sendAlert(name, pair) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: msg }),
       });
-      console.log(`  📨 Discord alert for ${pair}`);
+      console.log(`  📨 Discord alert for ${item}`);
     } catch (e) {
       console.log(`  ❌ Discord error: ${e.message}`);
     }
@@ -106,22 +74,38 @@ async function main() {
   console.log('=== Listing Monitor ===');
   console.log(`[${new Date().toISOString()}]`);
 
-  const results = await Promise.all(EXCHANGES.map(fetchPairs));
+  const results = await Promise.allSettled([
+    fetchOne('Binance', 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT', (d) => {
+      if (!d?.symbols) return [];
+      return d.symbols.filter(s => s.status === 'TRADING').map(s => `${s.baseAsset}/${s.quoteAsset}`);
+    }, 10000),
+    fetchOne('Bybit', 'https://api.bybit.com/v5/market/instruments-info?category=spot', (d) => {
+      if (!d?.result?.list) return [];
+      return d.result.list.filter(s => s.status === 'Trading').map(s => `${s.baseCoin}/${s.quoteCoin}`);
+    }, 10000),
+    fetchOne('NewCoins', 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=gecko_desc&per_page=50&sparkline=false', (d) => {
+      if (!Array.isArray(d)) return [];
+      return d.map(c => `${c.symbol.toUpperCase()} (${c.id})`);
+    }, 15000),
+  ]);
 
   const known = loadKnown();
   const isFirstRun = Object.keys(known).length === 0;
 
   const allNew = [];
   for (const r of results) {
-    const knownPairs = known[r.name] || [];
-    const knownSet = new Set(knownPairs);
+    if (r.status === 'rejected') continue;
+    const { name, items } = r.value;
+    const knownItems = known[name] || [];
+    const knownSet = new Set(knownItems);
 
-    const newPairs = r.pairs.filter(p => !knownSet.has(p));
-    for (const p of newPairs) {
-      knownPairs.push(p);
-      allNew.push({ name: r.name, pair: p });
+    for (const item of items) {
+      if (!knownSet.has(item)) {
+        knownItems.push(item);
+        allNew.push({ name, pair: item });
+      }
     }
-    known[r.name] = knownPairs;
+    known[name] = knownItems;
   }
 
   if (isFirstRun) {
