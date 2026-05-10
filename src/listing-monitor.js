@@ -14,47 +14,34 @@ const TELEGRAM_BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT = process.env.TELEGRAM_CHANNEL_ID;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 
-async function fetchBinanceListings() {
-  const res = await fetch(BINANCE_API);
-  const data = await res.json();
-  if (!data || !Array.isArray(data.symbols)) {
-    console.error('  ⚠️  Binance API returned unexpected format');
+async function fetchAPI(url, transform) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const text = await res.text();
+    const data = JSON.parse(text);
+    return transform(data);
+  } catch (e) {
+    console.error(`  ⚠️  API error (${url.slice(0, 40)}...): ${e.message}`);
     return [];
   }
-  const pairs = [];
-  for (const s of data.symbols) {
-    if (s.status === 'TRADING') {
-      pairs.push({
-        exchange: 'Binance',
-        symbol: `${s.baseAsset}/${s.quoteAsset}`,
-        base: s.baseAsset,
-        quote: s.quoteAsset,
-      });
-    }
-  }
-  return pairs;
 }
 
-async function fetchBybitListings() {
-  const res = await fetch(BYBIT_API);
-  const data = await res.json();
-  if (!data || !data.result || !Array.isArray(data.result.list)) {
-    console.error('  ⚠️  Bybit API returned unexpected format');
-    return [];
-  }
-  const pairs = [];
-  for (const s of data.result.list) {
-    if (s.status === 'Trading') {
-      pairs.push({
-        exchange: 'Bybit',
-        symbol: `${s.baseCoin}/${s.quoteCoin}`,
-        base: s.baseCoin,
-        quote: s.quoteCoin,
-      });
-    }
-  }
-  return pairs;
+function binanceTransform(data) {
+  if (!data || !Array.isArray(data.symbols)) return [];
+  return data.symbols
+    .filter(s => s.status === 'TRADING')
+    .map(s => ({ exchange: 'Binance', symbol: `${s.baseAsset}/${s.quoteAsset}`, base: s.baseAsset, quote: s.quoteAsset }));
 }
+
+function bybitTransform(data) {
+  if (!data || !data.result || !Array.isArray(data.result.list)) return [];
+  return data.result.list
+    .filter(s => s.status === 'Trading')
+    .map(s => ({ exchange: 'Bybit', symbol: `${s.baseCoin}/${s.quoteCoin}`, base: s.baseCoin, quote: s.quoteCoin }));
+}
+
+const fetchBinanceListings = () => fetchAPI(BINANCE_API, binanceTransform);
+const fetchBybitListings = () => fetchAPI(BYBIT_API, bybitTransform);
 
 function loadKnown() {
   try {
@@ -116,6 +103,8 @@ async function main() {
   console.log(`Bybit: ${bybit.length} pairs`);
 
   const known = loadKnown();
+
+  const isFirstRun = known.binance.length === 0 && known.bybit.length === 0;
   const knownSet = new Set(known.binance.concat(known.bybit));
 
   const newPairs = [];
@@ -132,6 +121,12 @@ async function main() {
       known.bybit.push(key);
       newPairs.push(p);
     }
+  }
+
+  if (isFirstRun) {
+    console.log(`\n📦 First run — saved ${known.binance.length + known.bybit.length} pairs as baseline. No alerts sent.`);
+    saveKnown(known);
+    return;
   }
 
   if (newPairs.length === 0) {
