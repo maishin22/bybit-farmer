@@ -5,6 +5,9 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -27,4 +30,5 @@ jobs:
           git config user.email "maishin22@users.noreply.github.com"
           git add known-listings.json
           git diff --cached --quiet || git commit -m "update known listings [skip ci]"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git push
