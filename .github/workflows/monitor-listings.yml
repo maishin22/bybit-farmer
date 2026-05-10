@@ -1,0 +1,30 @@
+name: Listing Monitor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+        env:
+          NODE_ENV: production
+      - run: node src/listing-monitor.js
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: Commit updated known-listings.json
+        run: |
+          git config user.name "maishin22"
+          git config user.email "maishin22@users.noreply.github.com"
+          git add known-listings.json
+          git diff --cached --quiet || git commit -m "update known listings [skip ci]"
+          git push
