@@ -7,8 +7,12 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const KNOWN_FILE = join(__dirname, '..', 'known-listings.json');
 
-const BINANCE_API = 'https://api.binance.com/api/v3/exchangeInfo';
+const BINANCE_API = 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT';
 const BYBIT_API = 'https://api.bybit.com/v5/market/instruments-info?category=spot';
+const FETCH_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json',
+};
 
 const TELEGRAM_BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT = process.env.TELEGRAM_CHANNEL_ID;
@@ -16,7 +20,7 @@ const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 
 async function fetchAPI(url, transform) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const res = await fetch(url, { headers: FETCH_HEADERS, signal: AbortSignal.timeout(30000) });
     const text = await res.text();
     const data = JSON.parse(text);
     return transform(data);
