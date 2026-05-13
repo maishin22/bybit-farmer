@@ -148,6 +148,7 @@ function generateHtml(allNew, newListings, known) {
   <title>New Crypto Listings Tracker — Binance, Bybit, KuCoin, OKX, MEXC</title>
   <meta name="description" content="Real-time new cryptocurrency listings across Binance, Bybit, KuCoin, OKX, and MEXC. Track newly listed pairs the moment they appear." />
   <meta name="keywords" content="new crypto listings, binance new listing, bybit new listing, kucoin listing, okx listing, mexc listing, crypto pairs tracker" />
+  <meta name="google-site-verification" content="HBMXZCYu6enJkSNX3KdBAyqje2dGDZCoTRaQ_kl7Zas" />
   <link rel="canonical" href="${siteUrl}" />
   <meta property="og:title" content="New Crypto Listings Tracker — 5 Major Exchanges" />
   <meta property="og:description" content="Real-time tracking of new cryptocurrency pairs on Binance, Bybit, KuCoin, OKX, and MEXC. ${totalPairs} pairs monitored." />
