@@ -8,15 +8,7 @@ import { postToDiscord } from './discord.js';
 import { postToBluesky } from './bluesky.js';
 
 function loadConfig() {
-  const ref = process.env.BYBIT_REF_LINK;
-  if (!ref) {
-    console.error('ERROR: BYBIT_REF_LINK not set in .env');
-    console.error('Get your referral link from Bybit → Affiliate Program');
-    process.exit(1);
-  }
-
   return {
-    refLink: ref,
     telegramBot: process.env.TELEGRAM_BOT_TOKEN,
     telegramChat: process.env.TELEGRAM_CHANNEL_ID,
     twitterKey: process.env.TWITTER_API_KEY,
@@ -36,7 +28,7 @@ async function main() {
 
   const cfg = loadConfig();
 
-  const { type, text } = generatePost(cfg.refLink);
+  const { type, text } = generatePost();
   console.log(`\nGenerated: [${type}]`);
   console.log(text.slice(0, 120) + '...');
 

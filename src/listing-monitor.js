@@ -13,6 +13,7 @@ const TELEGRAM_BOT = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT = process.env.TELEGRAM_CHANNEL_ID;
 const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL;
 const BYBIT_REF = 'https://www.bybit.com/invite?ref=N1PKV';
+const BINANCE_REF = 'https://www.binance.com/register?ref=36152696';
 
 const HEADERS = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
 
@@ -107,8 +108,17 @@ function escapeHtml(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function generateHtml(allNew, newListings) {
+function countExchangePairs(known) {
+  const counts = {};
+  for (const [ex, pairs] of Object.entries(known)) {
+    if (Array.isArray(pairs)) counts[ex] = pairs.length;
+  }
+  return counts;
+}
+
+function generateHtml(allNew, newListings, known) {
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const siteUrl = 'https://maishin22.github.io/bybit-farmer/';
 
   const rows = newListings.slice(0, 50).map(item => {
     const found = item.found_at.replace('T', ' ').slice(0, 19);
@@ -121,6 +131,14 @@ function generateHtml(allNew, newListings) {
   }).join('\n');
 
   const count = newListings.length;
+  const exCounts = known ? countExchangePairs(known) : {};
+  const totalPairs = Object.values(exCounts).reduce((a, b) => a + b, 0);
+  const trackedExchanges = Object.keys(exCounts).length;
+
+  const statsRows = Object.entries(exCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([ex, n]) => `<div class="stat-item"><span class="stat-ex">${escapeHtml(ex)}</span><span class="stat-num">${n} pairs</span></div>`)
+    .join('\n');
 
   return `<!doctype html>
 <html lang="en">
@@ -128,9 +146,29 @@ function generateHtml(allNew, newListings) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>New Crypto Listings Tracker — Binance, Bybit, KuCoin, OKX, MEXC</title>
-  <meta name="description" content="Real-time new cryptocurrency listings across major exchanges. Track new pairs on Binance, Bybit, KuCoin, OKX, and MEXC." />
-  <meta name="keywords" content="new crypto listings, binance new listing, bybit listing, kucoin listing, okx listing, mexc listing" />
-  <link rel="canonical" href="https://maishin22.github.io/bybit-farmer/" />
+  <meta name="description" content="Real-time new cryptocurrency listings across Binance, Bybit, KuCoin, OKX, and MEXC. Track newly listed pairs the moment they appear." />
+  <meta name="keywords" content="new crypto listings, binance new listing, bybit new listing, kucoin listing, okx listing, mexc listing, crypto pairs tracker" />
+  <link rel="canonical" href="${siteUrl}" />
+  <meta property="og:title" content="New Crypto Listings Tracker — 5 Major Exchanges" />
+  <meta property="og:description" content="Real-time tracking of new cryptocurrency pairs on Binance, Bybit, KuCoin, OKX, and MEXC. ${totalPairs} pairs monitored." />
+  <meta property="og:url" content="${siteUrl}" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="New Crypto Listings Tracker" />
+  <meta name="twitter:description" content="Real-time new crypto listings across 5 major exchanges." />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "New Crypto Listings Tracker",
+    "url": "${siteUrl}",
+    "description": "Real-time tracker of new cryptocurrency listings on Binance, Bybit, KuCoin, OKX, and MEXC.",
+    "about": {
+      "@type": "Thing",
+      "name": "Cryptocurrency Listings"
+    }
+  }
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -154,12 +192,24 @@ function generateHtml(allNew, newListings) {
     }
     .cta-box h2 { font-size: 20px; margin-bottom: 8px; color: #f7931a; }
     .cta-box p { color: #9ca3af; font-size: 14px; margin-bottom: 16px; }
+    .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
     .cta-btn {
-      display: inline-block; background: #f7931a; color: #0a0e17;
-      font-weight: 700; font-size: 18px; padding: 14px 48px;
-      border-radius: 8px; text-decoration: none; transition: opacity 0.2s;
+      display: inline-block; font-weight: 700; font-size: 16px; padding: 14px 36px;
+      border-radius: 8px; text-decoration: none; transition: opacity 0.2s; flex: 1; min-width: 200px;
     }
     .cta-btn:hover { opacity: 0.85; }
+    .cta-btn.bybit { background: #f7931a; color: #0a0e17; }
+    .cta-btn.binance { background: #f0b90b; color: #0a0e17; }
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px; margin-bottom: 32px;
+    }
+    .stat-item {
+      background: #111927; border: 1px solid #1f2937;
+      border-radius: 8px; padding: 16px; text-align: center;
+    }
+    .stat-ex { display: block; font-size: 13px; color: #f7931a; font-weight: 600; margin-bottom: 4px; }
+    .stat-num { display: block; font-size: 18px; font-weight: 700; color: #e0e6ed; }
     table { width: 100%; border-collapse: collapse; }
     th {
       text-align: left; padding: 12px 8px; font-size: 12px; text-transform: uppercase;
@@ -190,6 +240,7 @@ function generateHtml(allNew, newListings) {
       h1 { font-size: 22px; }
       .cta-box { padding: 16px; }
       .cta-btn { display: block; text-align: center; }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
 </head>
@@ -197,14 +248,21 @@ function generateHtml(allNew, newListings) {
   <div class="container">
     <h1>New Crypto Listings</h1>
     <div class="subtitle">
-      Tracked exchanges: Binance, Bybit, KuCoin, OKX, MEXC
-      <span class="badge">${count} listings found</span>
+      Tracking ${totalPairs} pairs across ${trackedExchanges} exchanges
+      <span class="badge">${count} new listings</span>
+    </div>
+
+    <div class="stats-grid">
+      ${statsRows}
     </div>
 
     <div class="cta-box">
-      <h2>Trade on Bybit</h2>
-      <p>Sign up and get access to the latest listings with leverage up to 100x</p>
-      <a class="cta-btn" href="${BYBIT_REF}" target="_blank">Start Trading on Bybit →</a>
+      <h2>Trade on Top Exchanges</h2>
+      <p>Sign up and get access to the latest crypto listings</p>
+      <div class="cta-row">
+        <a class="cta-btn bybit" href="${BYBIT_REF}" target="_blank">Trade on Bybit →</a>
+        <a class="cta-btn binance" href="${BINANCE_REF}" target="_blank">Trade on Binance →</a>
+      </div>
     </div>
 
     ${count === 0 ? '<div class="empty">No new listings detected yet. Check back soon.</div>' : `
@@ -218,7 +276,7 @@ function generateHtml(allNew, newListings) {
     <div class="footer">
       <p>Last updated: ${now}</p>
       <p>Data refreshes every 5 minutes. Not financial advice. DYOR.</p>
-      <p><a href="${BYBIT_REF}" target="_blank">Bybit Affiliate Link</a></p>
+      <p><a href="${BYBIT_REF}" target="_blank">Bybit</a> · <a href="${BINANCE_REF}" target="_blank">Binance</a></p>
     </div>
   </div>
 </body>
@@ -227,8 +285,9 @@ function generateHtml(allNew, newListings) {
 
 async function sendAlerts(items) {
   const promises = [];
+  const refs = [`Bybit: ${BYBIT_REF}`, `Binance: ${BINANCE_REF}`];
   for (const { id, pair } of items) {
-    const msg = `🚀 *NEW LISTING* on ${id}\n\n${pair}\n\nTrade: ${BYBIT_REF}`;
+    const msg = `🚀 *NEW LISTING* on ${id}\n\n${pair}\n\n${refs.join('\n')}`;
 
     if (TELEGRAM_BOT && TELEGRAM_CHAT) {
       const url = `https://api.telegram.org/bot${TELEGRAM_BOT}/sendMessage`;
@@ -308,7 +367,7 @@ async function main() {
   saveNewListings(newListings);
   saveKnown(known);
 
-  writeFileSync(INDEX_HTML, generateHtml(allNew, newListings));
+  writeFileSync(INDEX_HTML, generateHtml(allNew, newListings, known));
   console.log(`  📄 Generated docs/index.html (${newListings.length} total entries)`);
 
   console.log('\nDone.');
