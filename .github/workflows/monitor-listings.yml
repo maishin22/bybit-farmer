@@ -24,11 +24,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      - name: Commit updated known-listings.json
+      - name: Commit updates
         run: |
           git config user.name "maishin22"
           git config user.email "maishin22@users.noreply.github.com"
-          git add known-listings.json
-          git diff --cached --quiet || git commit -m "update known listings [skip ci]"
+          git add known-listings.json docs/
+          git diff --cached --quiet || git commit -m "update listings + site [skip ci]"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           git push
